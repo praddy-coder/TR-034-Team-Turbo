@@ -25,11 +25,101 @@ const initialCandidates = [
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [candidates, setCandidates] = useState(initialCandidates);
-  const [selectedHeatmap, setSelectedHeatmap] = useState<any | null>(null);
+  const [selectedHeatmap, setSelectedHeatmap] = useState<{name: string, smiles: string, toxicity: number, solubility: number, status: string} | null>(null);
+  const [toxicityThreshold, setToxicityThreshold] = useState(40);
+  const [drugLikenessThreshold, setDrugLikenessThreshold] = useState(65);
+  const [cudaEnabled, setCudaEnabled] = useState(true);
+  const [autoExport, setAutoExport] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const renderMoleculePaths = (name: string) => {
+    switch (name.toLowerCase()) {
+      case 'benzene': return (
+        <g className="molecule-paths" style={{ opacity: 0.9 }}>
+          <path d="M30 50 L45 25 L75 25 L90 50 L75 75 L45 75 Z" strokeLinejoin="round" />
+          <path d="M40 50 L49 33 M71 33 L80 50 M49 67 L71 67" strokeWidth="1" stroke="rgba(255,255,255,0.4)" />
+        </g>
+      );
+      case 'ethanol': return (
+        <g className="molecule-paths" style={{ opacity: 0.9 }}>
+          <path d="M20 60 L50 40 L80 60" />
+          <circle cx="80" cy="60" r="1" fill="var(--accent-1)" stroke="none" />
+          <text x="85" y="65" fill="var(--accent-1)" fontSize="12" stroke="none" style={{ fontFamily: 'monospace' }}>OH</text>
+        </g>
+      );
+      case 'aspirin': return (
+        <g className="molecule-paths" style={{ opacity: 0.9 }}>
+          <path d="M40 40 L55 30 L70 40 L70 60 L55 70 L40 60 Z" />
+          <path d="M44 43 L55 35 M66 43 L66 57 M44 57 L55 65" strokeWidth="1" stroke="rgba(255,255,255,0.4)" />
+          <path d="M70 40 L85 30 M85 30 L100 40 M83 30 L83 15 M87 30 L87 15" />
+          <text x="78" y="12" fill="var(--text-main)" fontSize="12" stroke="none" style={{ fontFamily: 'monospace' }}>O</text>
+          <text x="100" y="45" fill="var(--accent-2)" fontSize="12" stroke="none" style={{ fontFamily: 'monospace' }}>OH</text>
+          <path d="M40 60 L25 70 M25 70 L10 60 M23 70 L23 85 M27 70 L27 85" />
+          <text x="20" y="97" fill="var(--text-main)" fontSize="12" stroke="none" style={{ fontFamily: 'monospace' }}>O</text>
+          <circle cx="25" cy="70" r="2.5" fill="var(--accent-1)" stroke="none" /> 
+        </g>
+      );
+      case 'caffeine': return (
+        <g className="molecule-paths" style={{ opacity: 0.9 }}>
+          <path d="M40 40 L60 30 L80 40 L80 60 L60 70 L40 60 Z" />
+          <text x="35" y="65" fill="var(--accent-3)" fontSize="12" stroke="none" style={{ fontFamily: 'monospace' }}>N</text>
+          <text x="75" y="65" fill="var(--accent-3)" fontSize="12" stroke="none" style={{ fontFamily: 'monospace' }}>N</text>
+          <text x="55" y="32" fill="var(--accent-3)" fontSize="12" stroke="none" style={{ fontFamily: 'monospace' }}>N</text>
+          <path d="M40 40 L25 30 M38 40 L23 30" stroke="rgba(239, 68, 68, 0.8)" />
+          <path d="M60 70 L60 85 M62 70 L62 85" stroke="rgba(239, 68, 68, 0.8)" />
+          <path d="M80 40 L100 45 L95 65 L80 60" />
+          <text x="90" y="70" fill="var(--accent-3)" fontSize="12" stroke="none" style={{ fontFamily: 'monospace' }}>N</text>
+          <path d="M40 60 L25 70 M60 30 L60 15 M95 65 L110 75" />
+        </g>
+      );
+      default: return (
+        <g className="molecule-paths" style={{ opacity: 0.9 }}>
+          <path d="M30 30 L45 20 L60 30 L60 50 L45 60 L30 50 Z" />
+          <path d="M34 33 L45 26 M56 33 L56 47 M34 47 L45 54" strokeWidth="1" stroke="rgba(255,255,255,0.4)" />
+          <path d="M60 30 L75 20 L90 30 L90 50 L75 60 L60 50" />
+          <path d="M45 20 L45 5 M90 50 L100 58 M90 50 L100 42 A 5 5 0 0 1 100 58" stroke="rgba(255,255,255,0.7)" />
+          <path d="M45 60 L45 75 L32 85 M45 75 L58 85 M47 75 L60 85" />
+          <circle cx="32" cy="85" r="2.5" fill="var(--text-main)" stroke="none" />
+          <circle cx="58" cy="85" r="2.5" fill="var(--accent-1)" stroke="none" />
+        </g>
+      );
+    }
+  };
+
+  const renderHotspots = (name: string, toxicity: number, solubility: number) => {
+    let tx = toxicity > 0.8 ? "75" : "30"; 
+    let ty = toxicity > 0.8 ? "20" : "30"; 
+    let sx = "45";
+    let sy = "75";
+    
+    switch (name.toLowerCase()) {
+      case 'benzene': tx="75"; ty="25"; sx="45"; sy="75"; break;
+      case 'ethanol': tx="80"; ty="60"; sx="20"; sy="60"; break;
+      case 'aspirin': tx="85"; ty="30"; sx="25"; sy="70"; break;
+      case 'caffeine': tx="25"; ty="30"; sx="100"; sy="45"; break;
+    }
+    
+    return (
+      <>
+        {toxicity > 0.4 && (
+          <g className={toxicity > 0.8 ? "hotspot-danger" : "hotspot-warning"} style={{ transformOrigin: `${tx}px ${ty}px` }}>
+            <circle cx={tx} cy={ty} r="12" fill={toxicity > 0.8 ? "rgba(239, 68, 68, 0.4)" : "rgba(245, 158, 11, 0.3)"} filter={toxicity > 0.8 ? "url(#glow-danger-modal)" : "url(#glow-warning-modal)"} stroke="none" />
+            <circle cx={tx} cy={ty} r="4" fill={toxicity > 0.8 ? "#ef4444" : "#f59e0b"} stroke="none" />
+          </g>
+        )}
+        {solubility < 0.4 && (
+          <g className="hotspot-info" style={{ transformOrigin: `${sx}px ${sy}px` }}>
+            <circle cx={sx} cy={sy} r="10" fill="rgba(99, 102, 241, 0.3)" filter="url(#glow-info-modal)" stroke="none" />
+            <circle cx={sx} cy={sy} r="3" fill="#6366f1" stroke="none" />
+          </g>
+        )}
+      </>
+    );
+  };
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -78,6 +168,31 @@ export default function App() {
 
   return (
     <div className="app-container">
+      <style>{`
+        @keyframes moleculePulse {
+          0% { transform: scale(0.95); opacity: 0.6; }
+          100% { transform: scale(1.15); opacity: 1; }
+        }
+        @keyframes moleculeDraw {
+          0% { stroke-dasharray: 300; stroke-dashoffset: 300; opacity: 0; }
+          100% { stroke-dasharray: 300; stroke-dashoffset: 0; opacity: 1; }
+        }
+        .molecule-paths path {
+          animation: moleculeDraw 2.5s ease-out forwards;
+        }
+        .hotspot-danger {
+          animation: moleculePulse 1.5s infinite alternate ease-in-out;
+          transform-origin: center;
+        }
+        .hotspot-warning {
+          animation: moleculePulse 2s infinite alternate-reverse ease-in-out;
+          transform-origin: center;
+        }
+        .hotspot-info {
+          animation: moleculePulse 2.5s infinite alternate ease-in-out;
+          transform-origin: center;
+        }
+      `}</style>
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="brand">
@@ -85,8 +200,8 @@ export default function App() {
             <FlaskConical color="white" size={24} />
           </div>
           <div>
-            <h2 className="text-gradient" style={{ margin: 0 }}>TENSOR '26</h2>
-            <p style={{ fontSize: '0.75rem', margin: 0 }}>Team Turbo</p>
+            <h2 className="text-gradient" style={{ margin: 0 }}>ToxiScreen</h2>
+            <p style={{ fontSize: '0.75rem', margin: 0 }}>ADMET Intelligence</p>
           </div>
         </div>
 
@@ -217,12 +332,41 @@ export default function App() {
                   <div style={{ position: 'absolute', top: '10px', right: '10px' }}>
                     <span className="badge badge-danger">High Confidence</span>
                   </div>
-                  {/* Mock molecule image representation */}
-                  <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
-                    <path d="M12 2L22 7.5L22 18.5L12 24L2 18.5L2 7.5L12 2Z"/>
-                    <path d="M12 22V13"/>
-                    <path d="M22 7.5L12 13L2 7.5"/>
-                    <circle cx="12" cy="13" r="3" fill="rgba(239, 68, 68, 0.5)" stroke="none" />
+                  {/* Complex Animated Molecule with Glowing Nodes */}
+                  <svg width="150" height="150" viewBox="0 0 100 100" fill="none" stroke="var(--text-main)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <defs>
+                      <filter id="glow-danger" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="3" result="blur" />
+                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                      </filter>
+                      <filter id="glow-warning" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="3" result="blur" />
+                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                      </filter>
+                    </defs>
+                    <g className="molecule-paths" style={{ opacity: 0.8 }}>
+                      {/* Left Hexagon */}
+                      <path d="M30 30 L45 20 L60 30 L60 50 L45 60 L30 50 Z" />
+                      <path d="M33 33 L45 25 M57 33 L57 47 M33 47 L45 55" strokeWidth="1" stroke="rgba(255,255,255,0.3)" />
+                      {/* Right Hexagon connected */}
+                      <path d="M60 30 L75 20 L90 30 L90 50 L75 60 L60 50" />
+                      <path d="M63 33 L75 25 M87 33 L87 47 M63 47 L75 55" strokeWidth="1" stroke="rgba(255,255,255,0.3)" />
+                      {/* Branches */}
+                      <path d="M45 20 L45 5" />
+                      <circle cx="45" cy="5" r="2.5" fill="var(--accent-2)" stroke="none" />
+                      <path d="M90 50 L100 60" strokeDasharray="3,3" stroke="rgba(255,255,255,0.5)" />
+                      <path d="M45 60 L45 75 L35 85" />
+                      <path d="M45 75 L55 85" />
+                    </g>
+                    {/* Animated Hotspots */}
+                    <g className="hotspot-danger" style={{ transformOrigin: '75px 20px' }}>
+                      <circle cx="75" cy="20" r="8" fill="rgba(239, 68, 68, 0.4)" filter="url(#glow-danger)" stroke="none" />
+                      <circle cx="75" cy="20" r="3" fill="#ef4444" stroke="none" />
+                    </g>
+                    <g className="hotspot-warning" style={{ transformOrigin: '30px 50px' }}>
+                      <circle cx="30" cy="50" r="6" fill="rgba(245, 158, 11, 0.4)" filter="url(#glow-warning)" stroke="none" />
+                      <circle cx="30" cy="50" r="2" fill="#f59e0b" stroke="none" />
+                    </g>
                   </svg>
                 </div>
               </div>
@@ -246,9 +390,16 @@ export default function App() {
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
-                <button className="btn btn-secondary">
-                  <Filter size={18} /> Filters
-                </button>
+                <select 
+                  className="btn btn-secondary" 
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                >
+                  <option value="all">All Risks</option>
+                  <option value="safe">Safe Only</option>
+                  <option value="warning">Warning Only</option>
+                  <option value="danger">Danger Only</option>
+                </select>
                 <button className="btn btn-secondary">
                   Export CSV
                 </button>
@@ -267,7 +418,10 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {candidates.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.smiles.toLowerCase().includes(search.toLowerCase())).map(c => (
+                    {candidates
+                      .filter(c => filterStatus === 'all' || c.status === filterStatus)
+                      .filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.smiles.toLowerCase().includes(search.toLowerCase()))
+                      .map(c => (
                       <tr key={c.id}>
                         <td style={{ fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--accent-3)' }}>{c.smiles}</td>
                         <td style={{ fontWeight: 500 }}>{c.name}</td>
@@ -307,8 +461,34 @@ export default function App() {
         {/* Molecule Library View */}
         {activeTab === 'library' && (
           <div className="animate-fade-in" style={{ animationDelay: '0.3s' }}>
+            <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input 
+                  type="text" 
+                  className="input-control" 
+                  placeholder="Search Library..." 
+                  style={{ paddingLeft: '2.5rem' }}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <select 
+                className="btn btn-secondary" 
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="all">All Risks</option>
+                <option value="safe">Safe Only</option>
+                <option value="warning">Warning Only</option>
+                <option value="danger">Danger Only</option>
+              </select>
+            </div>
             <div className="dashboard-grid">
-              {candidates.map((c, idx) => (
+              {candidates
+                .filter(c => filterStatus === 'all' || c.status === filterStatus)
+                .filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.smiles.toLowerCase().includes(search.toLowerCase()))
+                .map((c, idx) => (
                 <div key={`${c.id}-${idx}`} className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontWeight: 600, fontSize: '1.125rem' }}>{c.name}</span>
@@ -452,17 +632,31 @@ export default function App() {
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                     <label style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Toxicity Risk Threshold</label>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>0.40</span>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{(toxicityThreshold / 100).toFixed(2)}</span>
                   </div>
-                  <input type="range" min="0" max="100" defaultValue="40" style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-1)' }} />
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={toxicityThreshold} 
+                    onChange={(e) => setToxicityThreshold(Number(e.target.value))}
+                    style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-1)' }} 
+                  />
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Molecules exceeding this threshold will be flagged as warning or danger.</p>
                 </div>
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                     <label style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Minimum Drug-Likeness (QED)</label>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>0.65</span>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{(drugLikenessThreshold / 100).toFixed(2)}</span>
                   </div>
-                  <input type="range" min="0" max="100" defaultValue="65" style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-2)' }} />
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={drugLikenessThreshold} 
+                    onChange={(e) => setDrugLikenessThreshold(Number(e.target.value))}
+                    style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--accent-2)' }} 
+                  />
                 </div>
               </div>
             </div>
@@ -474,8 +668,11 @@ export default function App() {
                   <div style={{ fontWeight: 500 }}>CUDA Acceleration</div>
                   <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Utilize PyTorch GPU backend for inference</div>
                 </div>
-                <div style={{ width: '44px', height: '24px', background: 'var(--accent-1)', borderRadius: '12px', padding: '2px', cursor: 'pointer' }}>
-                  <div style={{ width: '20px', height: '20px', background: 'white', borderRadius: '50%', transform: 'translateX(20px)', transition: 'transform 0.2s' }}></div>
+                <div 
+                  onClick={() => setCudaEnabled(!cudaEnabled)}
+                  style={{ width: '44px', height: '24px', background: cudaEnabled ? 'var(--accent-1)' : 'rgba(255,255,255,0.2)', borderRadius: '12px', padding: '2px', cursor: 'pointer', transition: 'background 0.2s' }}
+                >
+                  <div style={{ width: '20px', height: '20px', background: 'white', borderRadius: '50%', transform: cudaEnabled ? 'translateX(20px)' : 'translateX(0)', transition: 'transform 0.2s' }}></div>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '12px' }}>
@@ -483,8 +680,11 @@ export default function App() {
                   <div style={{ fontWeight: 500 }}>Auto-Export Screenings</div>
                   <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Automatically generate CSV+PDF reports after batch processing</div>
                 </div>
-                <div style={{ width: '44px', height: '24px', background: 'rgba(255,255,255,0.2)', borderRadius: '12px', padding: '2px', cursor: 'pointer' }}>
-                  <div style={{ width: '20px', height: '20px', background: 'white', borderRadius: '50%', transition: 'transform 0.2s' }}></div>
+                <div 
+                  onClick={() => setAutoExport(!autoExport)}
+                  style={{ width: '44px', height: '24px', background: autoExport ? 'var(--accent-1)' : 'rgba(255,255,255,0.2)', borderRadius: '12px', padding: '2px', cursor: 'pointer', transition: 'background 0.2s' }}
+                >
+                  <div style={{ width: '20px', height: '20px', background: 'white', borderRadius: '50%', transform: autoExport ? 'translateX(20px)' : 'translateX(0)', transition: 'transform 0.2s' }}></div>
                 </div>
               </div>
             </div>
@@ -497,10 +697,9 @@ export default function App() {
         )}
       </main>
 
-      {/* Heatmap Modal */}
       {selectedHeatmap && (
         <div className="modal-overlay" onClick={() => setSelectedHeatmap(null)}>
-          <div className="modal-content animate-fade-in" onClick={e => e.stopPropagation()}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
             <button className="close-btn" onClick={() => setSelectedHeatmap(null)}>
               <X size={24} />
             </button>
@@ -530,17 +729,28 @@ export default function App() {
                     {selectedHeatmap.status.toUpperCase()} TOXICITY
                   </span>
                 </div>
-                {/* SVG Mock of a highlighted molecule */}
-                <svg width="160" height="160" viewBox="0 0 24 24" fill="none" stroke="var(--text-main)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2L22 7.5L22 18.5L12 24L2 18.5L2 7.5L12 2Z"/>
-                  <path d="M12 22V13"/>
-                  <path d="M22 7.5L12 13L2 7.5"/>
-                  {selectedHeatmap.toxicity > 0.4 && (
-                    <circle cx="12" cy="13" r="4" fill={selectedHeatmap.toxicity > 0.8 ? "rgba(239, 68, 68, 0.6)" : "rgba(245, 158, 11, 0.6)"} stroke="none" />
-                  )}
-                  {selectedHeatmap.solubility < 0.4 && (
-                    <circle cx="2" cy="7.5" r="3" fill="rgba(99, 102, 241, 0.6)" stroke="none" />
-                  )}
+                {/* Complex Animated Molecule with Glowing Nodes */}
+                <svg width="200" height="200" viewBox="0 0 100 100" fill="none" stroke="var(--text-main)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <defs>
+                    <filter id="glow-danger-modal" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="4" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                    <filter id="glow-warning-modal" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="4" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                    <filter id="glow-info-modal" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="4" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                  </defs>
+                  
+                  {/* Real Dynamic Molecule SVG Skeleton */}
+                  {renderMoleculePaths(selectedHeatmap.name)}
+
+                  {/* Hotspots matched to structure */}
+                  {renderHotspots(selectedHeatmap.name, selectedHeatmap.toxicity, selectedHeatmap.solubility)}
                 </svg>
               </div>
 
